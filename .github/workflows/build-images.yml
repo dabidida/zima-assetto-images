@@ -1,5 +1,5 @@
 
-name: Build pinned AssettoServer and Panel images
+name: Build pinned AssettoServer and fixed Panel images
 
 on:
   workflow_dispatch:
@@ -28,7 +28,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Download official AssettoServer source
+      - name: Checkout AssettoServer
         uses: actions/checkout@v4
         with:
           repository: compujuckel/AssettoServer
@@ -44,18 +44,46 @@ jobs:
           push: true
           tags: ghcr.io/${{ steps.owner.outputs.owner }}/assetto-server:0.0.55-pre42
 
-      - name: Download Assetto Server Panel source
+      - name: Checkout Assetto Server Panel
         uses: actions/checkout@v4
         with:
           repository: ayozetr/assetto-server-panel
           ref: v1.8.0
           path: panel-src
 
-      - name: Build Assetto Server Panel
+      - name: Fix missing lib directory in panel image
+        shell: bash
+        run: |
+          test -f panel-src/lib/pure.js
+          python3 - <<'PY'
+          from pathlib import Path
+
+          dockerfile = Path("panel-src/Dockerfile")
+          content = dockerfile.read_text()
+          required = "COPY --from=builder --chown=panel:panel /app/lib ./lib"
+
+          if required not in content:
+              needle = "COPY --from=builder --chown=panel:panel /app/build.js"
+              if needle not in content:
+                  raise SystemExit("Could not find expected Dockerfile line")
+              content = content.replace(
+                  needle,
+                  needle + "\n" + required,
+                  1
+              )
+              dockerfile.write_text(content)
+
+          if required not in dockerfile.read_text():
+              raise SystemExit("Dockerfile patch failed")
+
+          print("Dockerfile fixed: lib/ will be included")
+          PY
+
+      - name: Build fixed Assetto Server Panel
         uses: docker/build-push-action@v6
         with:
           context: ./panel-src
           file: ./panel-src/Dockerfile
           platforms: linux/amd64
           push: true
-          tags: ghcr.io/${{ steps.owner.outputs.owner }}/assetto-server-panel:1.8.0
+          tags: ghcr.io/${{ steps.owner.outputs.owner }}/assetto-server-panel:1.8.0-libfix
