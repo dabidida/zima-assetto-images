@@ -1,0 +1,1 @@
+# zima-assetto-images
